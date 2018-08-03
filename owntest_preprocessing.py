@@ -52,7 +52,7 @@ class OwnData(object):
             if not os.path.exists(save_path):
                 os.mkdir(save_path)  # create video folder
             else:
-                print('warning: {} folder for {} exists, skipping conversion..'.format(video_idx, activity))
+                print('warning: {} folder exists, skipping conversion..'.format(video_idx))
                 continue
 
             video_capture = cv2.VideoCapture(video_path)
@@ -65,6 +65,10 @@ class OwnData(object):
                 try:
                     if img_count % FRAME_RATE == 0:
                         img_name = save_path + str(img_i).zfill(N_IMG) + ".jpg"  # save images in video folder
+
+                        # de-interlacing: delete every second row and column
+                        image = image[::2, ::2, :]
+
                         cv2.imwrite(img_name, image)     # save frame as JPEG file
                         img_i += 1
                 except:
@@ -82,7 +86,7 @@ class OwnData(object):
         video_paths = glob.glob(self.path + orig_path + '*')
         for video_idx, video in enumerate(video_paths):
             video_name = video.split('/').pop()  # e.g. afghan_hound.mp4
-            video_name = video_name.replace('.mov', '')  # e.g. afghan_hound
+            video_name = video_name.replace('.MTS', '')  # e.g. afghan_hound
             img_paths = glob.glob(video + '/*.jpg')
 
             save_dir = 'processed/'
@@ -221,14 +225,61 @@ class OwnData(object):
             image_rev = image[:, ::-1, :]
             cv2.imwrite(save_dir + str(i+1).zfill(4) + '.jpg', image_rev)
 
+    def rename(self):
+        # files = glob.glob(path + 'tfrecords/*')
+        files = glob.glob(path + 'rename/*')
 
+        for i, file in enumerate(files):
+            # os.rename(file, file.replace('exported/', 'exported/'+str.zfill(str(i), 2)))
+            # os.rename(file, file.replace('.tfrecords', '-'+'.tfrecords'))
+            # n, s, a, tf = file.split('-')
+            # os.rename(file, n + '-' + a + '-' + s + '-' + tf)
+
+            a = i % 5
+            s = int(i / 5)
+            new_name = str.zfill(str(i), 4) + '-' + str(a) + '-' + str.zfill(str(s), 3)
+
+            os.rename(file, path + new_name)
+
+    def rename_raw(self, bg0=False, start_id=0):
+        # files = glob.glob(path + 'tfrecords/*')
+        subject_files = glob.glob(path + 'rename/' + '*')
+        i_b = 1  # start at one (0 is for other dataset)
+        for i_s, file_s in enumerate(subject_files):
+            # os.rename(file, file.replace('exported/', 'exported/'+str.zfill(str(i), 2)))
+            # os.rename(file, file.replace('.tfrecords', '-'+'.tfrecords'))
+            # n, s, a, tf = file.split('-')
+            # os.rename(file, n + '-' + a + '-' + s + '-' + tf)
+            # subject_name = file.split('/')[-1]
+            # os.rename(file_s, path + 's' + str(i_s))
+            s = str.zfill(str(i_s+start_id), 3)
+            backgr_files = glob.glob(file_s + '/*')
+            for i_b, file_b in enumerate(backgr_files):
+                if file_b.split('/')[-1] == 'x':
+                    b = 'x'
+                else:
+                    b = str.zfill(str(i_b), 3)
+                i_b += 1
+                videos = glob.glob(file_b + '/*')
+                for i_v, file_v in enumerate(videos):
+                    v = str(i_v)
+                    if bg0:
+                        b = 0
+                    new_name = path + 'exported/' + 's' + s + '-b' + b + '-a' + v
+                    os.rename(file_v, new_name)
+
+
+# step 0: put videos to be renamed in "path/rename" (will then be stored in "path/exported"
 # step 1: put to videos in folder "path/exported"
 # step 2: convert videos to frames to be stored in folder "path/raw"
 # step 3: make processed frames and tfrecords files, stored in "path/processed" and "path/tfrecords"
 
-path = '../../../../myroot/jockel/'
+path = '../../../../myroot/bigjockel/'
 assert os.path.exists(path)
 
 own = OwnData(path_to_dataset=path)
+own.rename_raw(bg0=True, start_id=100)
 # own.convert_mg4_to_img()
-own.make_videos()
+# own.make_videos()
+
+# own.rename()
