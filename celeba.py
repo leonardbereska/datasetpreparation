@@ -1,7 +1,7 @@
 import numpy as np
 import glob
 import os
-from helpers import to_tfrecords, make_dir
+from ops import to_tfrecords, make_dir
 
 
 class CelebA(object):
@@ -17,9 +17,8 @@ class CelebA(object):
         Create short sequences (videos) of the 200.000 images
         :return:
         """
-        # later: todo use metadata (annotations) for making grouping similar images in videos
         length = 1000  # length of one video
-        n_videos = int(self.n_images / length) + 1  # rounding up here, todo dirty
+        n_videos = int(self.n_images / length) + 1
         all_images = glob.glob(path_to_data + '*')
 
         for video_idx in range(n_videos):
@@ -33,12 +32,6 @@ class CelebA(object):
                 length = len(list_imgpaths)
 
             list_keypoints = self.keypoints[from_:to_]
-            # my_bboxes = self.bboxes[from_:to_]
-            #
-            # for img_idx in range(length):
-            #     max_ = max(my_bboxes[img_idx, 2:])  # get maximum of width and height
-            #     list_max_bbox.append(max_)
-            #     kp = self.keypoints[from_:to_]
 
             to_tfrecords(root_path=self.path, video_name=str(video_idx).zfill(2), video_idx=video_idx,
                          list_imgpaths=list_imgpaths, list_keypoints=list_keypoints, list_masks=None)
@@ -113,14 +106,12 @@ class CelebA(object):
 
             list_imgpaths = []
             list_keypoints = []
-            # list_max_bbox = []
 
             for i, test_id in enumerate(id_list):
                 image_path = self.path + 'img_align_celeba/' + test_id
                 img_id = test_id.replace('.jpg', '')
                 idx = int(img_id) - 1  # 0th element is 000001.jpg
                 kp = self.keypoints[idx, :]
-                # max_bbox = np.max(self.bboxes[idx, :2])
                 print(img_id)
 
                 list_imgpaths.append(image_path)

@@ -1,22 +1,20 @@
-import numpy as np
 import glob
 import cv2
-import tensorflow as tf
 import os
-from scipy.misc import imresize
-from helpers import to_tfrecords, make_dir, extract_frames
+from ops import to_tfrecords, make_dir, extract_frames
+from ops_img import save_img, pad_img, crop_img, resize_img
 
 
 class DogRun(object):
     def __init__(self, path_to_dataset):
         self.path = path_to_dataset
-        self.img_size = [600, 600]  # todo find maximum in dataset
+        self.res = 600
+        self.shape = (self.res, self.res, 3)
 
     def make_videos(self, orig_path='raw/'):
         """
         :return:
         """
-        make_dir(self.path + 'tfrecords/')
         make_dir(self.path + 'processed/')
 
         video_paths = glob.glob(self.path + orig_path + '*')
@@ -32,8 +30,6 @@ class DogRun(object):
             make_dir(save_path)
 
             list_imgpaths = []
-            list_keypoints = []
-            list_masks = []
 
             for image_idx, image_path in enumerate(img_paths):
 
@@ -44,61 +40,24 @@ class DogRun(object):
                     print('skipping empty image {} in video {}'.format(image_idx, video_idx))
                     continue
 
-                # resize to quadratic
-
                 center = [int(w / 2), int(h / 2)]  # x, y
 
                 # pad
-                pad_x = 1000  # self.max_dim[0]
-                pad_y = 1000  # self.max_dim[1]
-
-                center[0] += pad_x
-                center[1] += pad_y
-                image = np.lib.pad(image, ((pad_y, pad_y), (pad_x, pad_x), (0, 0)), 'symmetric')
+                image, _, center = pad_img(image, center=center)
 
                 # crop around center
                 c = max(w, h)
-                crop_w = c
-                crop_h = c
-                crop_x = int(center[0] - crop_w / 2)
-                crop_y = int(center[1] - crop_h / 2)
-                center[0] -= crop_x
-                center[1] -= crop_y
-                image = image[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
+                crop = (c, c)
+                image, _, center = crop_img(image, crop, center)
 
-                # resize to bbox
-                out_shape = (self.img_size[0], self.img_size[1], 3)
-                image = imresize(image, out_shape)
-                center[1] = center[1] / crop_h * out_shape[1]
-                center[0] = center[0] / crop_w * out_shape[0]
-
-                # # visualize
-                # from matplotlib import pyplot as plt
-                # i = 7
-                # plt.imshow(image)
-                # plt.scatter(kp_x[i], kp_y[i])
-                # plt.scatter(center[0], center[1], c='r')  # 7, 4
+                # resize to final shape
+                image, _, center = resize_img(image, self.shape, center=center)
 
                 image_path = image_path.replace(orig_path, save_dir)
-                dim_correct = (image.shape == (self.img_size[0], self.img_size[0], 3))
-                assert dim_correct, '{}'.format(image.shape)  # must be rectangular and same size
-                assert (image.dtype == np.uint8)
-                cv2.imwrite(image_path, image)
+                save_img(image, image_path, self.shape)
                 list_imgpaths.append(image_path)
 
-                kp = np.array([0])
-                list_keypoints.append(kp)
-
-                # max_bbox = int(min(w, h) / c * out_shape[0])  # smaller of image size scaled to out size
-                # list_max_bbox.append(max_bbox) # todo delete
-                # mask # todo create
-                mask = kp * 0. + 1. # todo check
-                list_masks.append(mask)
-
-            # save tfrecords
-            make_dir(self.path + 'tfrecords/')
-            out_path = os.path.join(self.path + 'tfrecords/' + "_" + str(video_idx).zfill(2) + ".tfrecords")
-            to_tfrecords(out_path, video_idx, list_imgpaths, list_keypoints, list_masks)
+            to_tfrecords(self.path, str(video_idx).zfill(2), video_idx, list_imgpaths, list_keypoints=None, list_masks=None)
 
 
 path = '../../../../myroot/'

@@ -4,27 +4,27 @@ import cv2
 import os
 import scipy.io as sio
 from scipy.misc import imresize
-from helpers import to_tfrecords, make_dir
+from ops import to_tfrecords, make_dir
+from ops_img import pad_img, crop_img, save_img, resize_img
 
 
 class PennAction(object):
     def __init__(self, path_to_dataset):
         self.path = path_to_dataset
-        self.n_kp = 13  # todo clean
-        # self.keypoints = self.get_kp()  # comment out for speed
-        # self.bboxes = self.get_bb()
+        self.n_kp = 13
         self.path_data = path_to_dataset + 'frames/'
         self.path_label = path_to_dataset + 'labels/'
         # todo train/test split
         # todo visibility of kp ask domili
         # self.n_images
-        self.max_dim = [600, 600]
+        self.res = 600
+        self.shape = (self.res, self.res, 3)
         self.all_actions = ['baseball_pitch', 'clean_and_jerk', 'pull_ups', 'strumming_guitar', 'baseball_swing',
                             'golf_swing', 'push_ups', 'tennis_forehand', 'bench_press', 'jumping_jacks', 'sit_ups',
                             'tennis_serve', 'bowling', 'jump_rope', 'squats']
         self.selected_actions = ["tennis_serve", "tennis_forehand", "baseball_pitch", "baseball_swing", 'jumping_jacks',
                            'golf_swing']
-        self.bbox_factor = 2.
+        self.c = 2.
         # keypoints
         # 1. head
         # 2. left_shoulder
@@ -40,11 +40,10 @@ class PennAction(object):
         # 12. left_ankle
         # 13. right_ankle
 
-
     def process(self):
         dir = 'processed/'
         make_dir(self.path + dir)
-        make_dir(self.path + dir + 'train/')
+        make_dir(self.path + dir + 'train/')  # todo make proper train-test split
         make_dir(self.path + dir + 'test/')
         make_dir(self.path + 'tfrecords/')
 
@@ -54,7 +53,7 @@ class PennAction(object):
             # get meta data
             metadata_dir = video.replace('frames/', 'labels/') + '.mat'
             f = sio.loadmat(metadata_dir)
-            action = f['action'][0]  # todo action
+            action = f['action'][0]
             if not action in self.selected_actions:
                 print('action {} not selected'.format(action))
                 continue
@@ -69,14 +68,31 @@ class PennAction(object):
             bbox = f['bbox']
             x = f['x']
             y = f['y']
-            dim = f['dimensions'][0]
+            # dim = f['dimensions'][0]
             visibility = f['visibility']
 
+            def get_frame(frame_idx):
+                kp_x = x[frame_idx]
+                kp_y = y[frame_idx]
+                mask = visibility[frame_idx]
+                image = cv2.imread(frame)
+                bb = bbox[frame_idx]
+                bb_w = int(bb[2] - bb[0])
+                bb_h = int(bb[3] - bb[1])
+                if not (bb_w > 0 and bb_h > 0):
+                    print('bbox_w {}, bbox_h {} in frame {}, video {}, continue..'.format(bb_w, bb_h, frame_idx,
+                                                                                          video_idx))
+                    return False
+                center = [int((bb[2] + bb[0]) / 2), int((bb[3] + bb[1]) / 2)]  # x, y
+                kp = (kp_x, kp_y)
+                max_bbox = np.max([bb_w, bb_h])
+                return image, kp, mask, max_bbox, center
+
             video_path = video.replace('frames/', save_dir)
-            if os.path.exists(video_path):
+
+            if not make_dir(video_path):
                 print('video {} already done, continue..'.format(video_idx))
                 continue
-            make_dir(video_path)
 
             list_imgpaths = []
             list_keypoints = []
@@ -85,108 +101,36 @@ class PennAction(object):
             frames = sorted(glob.glob(video + '/*'))
             for frame_idx, frame in enumerate(frames):
 
-                # try: x.shape
-                kp_x = x[frame_idx]
-                kp_y = y[frame_idx]
-                mask = visibility[frame_idx]
-                image = cv2.imread(frame)
-                bb = bbox[frame_idx]
-                # except IndexError:
-                #     print('warning Indexerror')
-                #     continue
-                bb_w = int(bb[2] - bb[0])
-                bb_h = int(bb[3] - bb[1])
-                if not (bb_w > 0 and bb_h > 0):
-                    print('bbox_w {}, bbox_h {} in frame {}, video {}, continue..'.format(bb_w, bb_h, frame_idx, video_idx))
+                if not get_frame(frame_idx):
                     continue
-                center = [int((bb[2] + bb[0]) / 2), int((bb[3] + bb[1]) / 2)]  # x, y
+                image, kp, mask, max_bbox, center = get_frame(frame_idx)
 
                 # pad
-                pad_x = self.max_dim[0]
-                pad_y = self.max_dim[1]
-                kp_x += pad_x
-                kp_y += pad_y
-                center[0] += pad_x
-                center[1] += pad_y
-                image = np.lib.pad(image, ((pad_y, pad_y), (pad_x, pad_x), (0, 0)), 'symmetric')
-
+                pad = (self.res, self.res)
+                image, kp, center = pad_img(image, pad, kp, center)
 
                 # crop around center
-                # crop0 = int(center[0] - self.max_dim[0] / 2)
-                # crop1 = int(center[1] - self.max_dim[1] / 2)
-                # kp_x -= crop0
-                # kp_y -= crop1
-                # center[0] -= crop0
-                # center[1] -= crop1
-                # image = image[crop1:crop1+480, crop0:crop0+480]
+                crop = (int(max_bbox * self.c), int(max_bbox * self.c))
+                image, kp, center = crop_img(image, crop, kp, center)
 
+                # resize image
+                resize_img(image, self.shape, kp, center)
 
-
-                # crop around center
-                bbox_factor = self.bbox_factor
-                max_bbox = np.max([bb_w, bb_h])
-                crop_w = int(max_bbox * bbox_factor)
-                crop_h = int(max_bbox * bbox_factor)
-                crop_x = int(center[0] - crop_w / 2)
-                crop_y = int(center[1] - crop_h / 2)
-                kp_x -= crop_x
-                kp_y -= crop_y
-                center[0] -= crop_x
-                center[1] -= crop_y
-                image = image[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
-
-
-
-                # resize to bbox
-                out_shape = (self.max_dim[0], self.max_dim[1], 3)
-                image = imresize(image, out_shape)
-                kp_y = kp_y / crop_h * out_shape[1]
-                kp_x = kp_x / crop_w * out_shape[0]
-                center[1] = center[1] / crop_h * out_shape[1]
-                center[0] = center[0] / crop_w * out_shape[0]
-
-                # from matplotlib import pyplot as plt
-                # fig = plt.figure()
-                # plt.imshow(image)
-                # kp_x *= mask
-                # kp_y *= mask
-                # plt.scatter(kp_x, kp_y)
-                # plt.scatter(center[0], center[1], c='r')
-                # # plt.scatter(bb[0], bb[1], c='k')
-                # # plt.scatter(bb[2], bb[3], c='k')
-                # make_dir(self.path + 'matplot/')
-                # plt.savefig(self.path + 'matplot/video{}image{}.png'.format(video_idx, frame_idx), format='png')
-                # plt.close(fig)
-
-                # # visualize
-                # from matplotlib import pyplot as plt
-                # fig = plt.figure()
-                # plt.imshow(image)
-                # plt.scatter(kp_x, kp_y)
-                # plt.scatter(center[0], center[1], c='r')
-                # make_dir(self.path + 'matplot/')
-                # plt.savefig(self.path + 'matplot/image{}.png'.format(frame_idx), format='png')
-                # plt.close(fig)
-
+                # save image, make lists
                 image_path = frame.replace('frames/', save_dir)
-                dim_correct = (image.shape == (self.max_dim[0], self.max_dim[0], 3))
-                assert dim_correct, '{}'.format(image.shape)  # must be rectangular and same size
-                assert (image.dtype == np.uint8)
-                cv2.imwrite(image_path, image)
+                save_img(image, image_path, self.shape)
                 list_imgpaths.append(image_path)
 
+                kp_x, kp_y = kp
                 kp = np.concatenate([kp_x, kp_y], axis=0)
-                assert 0 <= kp.all() < self.max_dim[0], 'kp not in image'
+                assert 0 <= kp.all() < self.res, 'kp not in image'
                 list_keypoints.append(kp)
 
                 mask = mask.astype(np.float32)
                 list_masks.append(mask)
 
-            save_path = self.path + 'tfrecords/' + traintest
-            make_dir(save_path)
-            out_path = os.path.join(save_path + action + "_" + str(video_idx + 1).zfill(4) + ".tfrecords")
-
-            to_tfrecords(out_path, video_idx, list_imgpaths, list_keypoints, list_masks)  # todo tfrecords train test
+            to_tfrecords(root_path=self.path, video_name=action + "_" + str(video_idx + 1).zfill(4), video_idx=video_idx,
+                         list_imgpaths=list_imgpaths, list_keypoints=list_keypoints, list_masks=list_masks)
 
 
 path = '../../../../myroot/penn/'

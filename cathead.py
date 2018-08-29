@@ -3,38 +3,18 @@ import glob
 import cv2
 import tensorflow as tf
 import os
-from scipy.misc import imresize
-from helpers import to_tfrecords, make_dir
+from ops import to_tfrecords, make_dir
+from ops_img import pad_img, crop_img, resize_img, save_img
 
 
 class CatHead(object):
     def __init__(self, path_to_dataset):
         self.path = path_to_dataset
-        self.n_kp = 9  # todo only use 7
-        # self.keypoints = self.get_kp()  # comment out for speed
-        # self.bboxes = self.get_bb()
-        # self.n_images
-        # self.max_dim = [960]
-        self.img_size = [600, 600]  # maximum in dataset: w 952 , h 919
-    # Number
-    # of
-    # points(default is 9)
-    # Left
-    # Eye
-    # Right
-    # Eye
-    # Mouth
-    # Left
-    # Ear - 1
-    # Left
-    # Ear - 2
-    # Left
-    # Ear - 3
-    # Right
-    # Ear - 1
-    # Right
-    # Ear - 2 - Right
-    # Ear - 3
+        self.n_kp = 9
+        self.res = 600  # maximum in dataset: w 952 , h 919
+        self.shape = (self.res, self.res, 3)
+    # Number of points(default is 9): Left Eye, Right Eye, Mouth,
+    # Left Ear - 1 Left Ear - 2 Left Ear - 3 Right Ear - 1 Right Ear - 2 - Right Ear - 3
 
     def make_videos(self, orig_path='frames/', traintest=False):
         """
@@ -53,19 +33,16 @@ class CatHead(object):
 
             save_dir = 'processed/'
             save_path = video.replace(orig_path, save_dir)
-            if os.path.exists(save_path):
+
+            if not make_dir(save_path):
                 print('video {} done already, skipping..'.format(video_idx))
                 continue
-            make_dir(save_path)
 
             list_imgpaths = []
             list_keypoints = []
-            list_masks = []
 
             for image_idx, image_path in enumerate(img_paths):
 
-                # image_idx = 4
-                # image_path = img_paths[image_idx]
                 image = cv2.imread(image_path)
 
                 # get kp
@@ -94,64 +71,32 @@ class CatHead(object):
                 bb = [min(kp_bb_x), min(kp_bb_y), max(kp_bb_x), max(kp_bb_y)]
                 bb_w = int(bb[2] - bb[0]) + 1
                 bb_h = int(bb[3] - bb[1]) + 1
-                # if bb_w > self.max_dim[0] or bb_h > self.max_dim[1]:   # take all frames now
-                #     print('size ({}, {}) too big'.format(bb_w, bb_h))
-                #     continue
                 center = [int((bb[2] + bb[0]) / 2), int((bb[3] + bb[1]) / 2)]  # x, y
 
+                max_bbox = np.max([bb_w, bb_h])
+                kp = [kp_x, kp_y]
+
                 # pad
-                pad_x = 1000  # self.max_dim[0]
-                pad_y = 1000  # self.max_dim[1]
-                kp_x += pad_x
-                kp_y += pad_y
-                center[0] += pad_x
-                center[1] += pad_y
-                image = np.lib.pad(image, ((pad_y, pad_y), (pad_x, pad_x), (0, 0)), 'symmetric')
+                image, kp, center = pad_img(image, kp=kp, center=center)
 
                 # crop around center
-                crop_w = int(bb_w * 2)
-                crop_h = int(bb_h * 2)
-                crop_x = int(center[0] - crop_w / 2)
-                crop_y = int(center[1] - crop_h / 2)
-                kp_x -= crop_x
-                kp_y -= crop_y
-                center[0] -= crop_x
-                center[1] -= crop_y
-                image = image[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
+                crop = (int(max_bbox * 2), int(max_bbox * 2))
+                image, kp, center = crop_img(image, crop, kp, center)
 
-                # resize to bbox
-                out_shape = (self.img_size[0], self.img_size[1], 3)
-                image = imresize(image, out_shape)
-                kp_y = kp_y / crop_h * out_shape[1]
-                kp_x = kp_x / crop_w * out_shape[0]
-                center[1] = center[1] / crop_h * out_shape[1]
-                center[0] = center[0] / crop_w * out_shape[0]
+                # resize to final size
+                image, kp, center = resize_img(image, self.shape, kp, center)
 
-                # # visualize
-                # from matplotlib import pyplot as plt
-                # i = 7
-                # plt.imshow(image)
-                # plt.scatter(kp_x[i], kp_y[i])
-                # plt.scatter(center[0], center[1], c='r')  # 7, 4
+                kp_x = kp[0]
+                kp_y = kp[1]
+                kp = np.concatenate([kp_x, kp_y], axis=0)
 
                 image_path = image_path.replace(orig_path, save_dir)
-                dim_correct = (image.shape == (self.img_size[0], self.img_size[0], 3))
-                assert dim_correct, '{}'.format(image.shape)  # must be rectangular and same size
-                assert (image.dtype == np.uint8)
-                cv2.imwrite(image_path, image)
-                list_imgpaths.append(image_path)
+                save_img(image, image_path, self.shape)
 
-                kp = np.concatenate([kp_x, kp_y], axis=0)
+                list_imgpaths.append(image_path)
                 list_keypoints.append(kp)
 
-                # max_bbox = np.max([bb_w, bb_h])
-                # list_max_bbox.append(max_bbox)
-                mask = kp_x * 0. + 1. # todo check
-                list_masks.append(mask) # todo
-
-            make_dir(self.path + 'tfrecords/')
-            out_path = os.path.join(self.path + 'tfrecords/' + "_" + str(video_idx).zfill(2) + ".tfrecords")
-            to_tfrecords(out_path, video_idx, list_imgpaths, list_keypoints, list_masks)
+            to_tfrecords(self.path, str(video_idx).zfill(2), video_idx, list_imgpaths, list_keypoints, None)
 
     def get_test_train_split(self):
         """

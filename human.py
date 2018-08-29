@@ -16,111 +16,13 @@ import os
 import re
 # import py
 # import pysatCDF
-from helpers import to_tfrecords
+from ops import to_tfrecords, make_dir
+from ops_img import save_img
 
 
 FRAME_RATE = 10
 N_VID = 2  # maximum number of videos for each activity: 10^n_vid
 N_IMG = 4  # maximum number of images for each video: 10^n_img
-
-
-def make_dir(path):
-    if not os.path.exists(path):
-        os.mkdir(path)
-
-
-def tryint(s):
-    try:
-        return int(s)
-    except ValueError:
-        return s
-
-
-def alphanum_key(s):
-    return [tryint(c) for c in re.split('([0-9]+)', s)]
-
-
-def show_img(img):
-    plt.imshow(img)
-    plt.show(block=False)
-
-
-def print_progress(count, total):
-    # Percentage completion.
-    pct_complete = float(count) / total
-
-    # Status-message.
-    # Note the \r which means the line should overwrite itself.
-    msg = "\r- Progress: {0:.1%}".format(pct_complete)
-
-    # Print it.
-    sys.stdout.write(msg)
-    sys.stdout.flush()
-
-
-def wrap_int64(value):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
-
-def wrap_float32(value):
-    return tf.train.Feature(float_list=tf.train.FloatList(value=value))  # wtf only float
-
-
-def wrap_bytes(value):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
-
-
-# def convert(data, activ, save_path):
-#     # Args:
-#     # image_paths   List of file-paths for the images.
-#     # labels        Class-labels for the images.
-#     # out_path      File-path for the TFRecords output file.
-#
-#     list_img_path, list_video_nr, list_frame_idx, list_n_frames = data["img_paths"], data["video_idxs"], data["frame_idxs"], data["max_frame_idxs"]
-#
-#     for img_path, video_nr, frame_idx, n_frames in zip(list_img_path, list_video_nr, list_frame_idx, list_n_frames):
-#         # Number of images. Used
-#         # s when printing the progress.
-#         num_images = len(img_path)
-#
-#         # Open a TFRecordWriter for the output-file.
-#
-#         out_path = os.path.join(save_path + activ + "_" + str(video_nr[0]).zfill(2) + ".tfrecords")
-#         print("Converting: " + out_path)
-#         with tf.python_io.TFRecordWriter(out_path) as writer:
-#             # Iterate over all the image-paths and class-labels.
-#             for i, (path, video_nr, frame_idx, n_frames) in enumerate(zip(img_path, video_nr, frame_idx, n_frames)):
-#                 # Print the percentage-progress.
-#                 print_progress(count=i, total=num_images - 1)
-#
-#                 with open(path, 'rb') as f:
-#                     img_raw = f.read()
-#
-#                 # Convert the image to raw bytes.
-#                 # img_bytes = img_raw.tostring()
-#
-#                 # Create a dict with the data we want to save in the
-#                 # TFRecords file. You can add more relevant data here.
-#                 data = \
-#                     {
-#                         'image': wrap_bytes(img_raw),
-#                         'video': wrap_int64(video_nr),
-#                         'frame': wrap_int64(frame_idx),
-#                         'n_frames': wrap_int64(n_frames),
-#                     }
-#
-#                 # Wrap the data as TensorFlow Features.
-#                 feature = tf.train.Features(feature=data)
-#
-#                 # Wrap again as a TensorFlow Example.
-#                 example = tf.train.Example(features=feature)
-#
-#                 # Serialize the data.
-#                 serialized = example.SerializeToString()
-#
-#                 # Write the serialized data to the TFRecords file.
-#
-#                 writer.write(serialized)
 
 
 class Human(object):
@@ -130,80 +32,6 @@ class Human(object):
         self.path = path_to_dataset
         self.bboxes = None  # h and w of bounding boxes, list of activities of lists of videos of lists of frames
         self.keypoints = None  # keypoints
-
-    def convert_mg4_to_img(self):
-        """
-        Converts video from mp4 to img frames
-        """
-        global N_IMG
-        global N_VID
-        global FRAME_RATE  # save only every nth frame
-
-        # all_modes = ['mask', 'raw', 'bbox']
-        # for mode in modes:
-        #     assert mode in all_modes
-            # extract Mask
-        mode_path = self.path + 'raw' + '/'
-        make_dir(mode_path)
-
-        for activity in self.activities:
-            dir_path = mode_path + activity + '/'
-            make_dir(dir_path)
-
-            # if mode == 'mask':
-            #     vid_path = self.path + 'MySegmentsMat/ground_truth_bs/'  # path to masks
-            # if mode == 'raw':
-            vid_path = self.path + 'Videos/'  # path to all raw videos
-            # elif mode == 'bbox':
-            #     vid_path = self.path + 'MySegmentsMat/ground_truth_bb/'
-            activity = (activity[:1]).upper() + activity[1:]  # first letter upper case
-            vid_path += activity
-            video_paths = glob.glob(vid_path + '*')  # can use other format also e.g. .avi
-
-            for vid_count, path in enumerate(video_paths):
-                save_path = dir_path + str(vid_count).zfill(N_VID) + '/'  # video folder path
-                if not os.path.exists(save_path):
-                    os.mkdir(save_path)  # create video folder
-                else:
-                    print('warning: {} folder for {} exists, skipping conversion..'.format(vid_count, activity))
-                    continue
-
-                # if mode == 'bbox':
-                #     with h5py.File(path, 'r') as f:
-                #         # print(f.keys())  # have to know which keys to select
-                #         all_frames = np.array(f['Masks'])
-                #         img_i = 0
-                #         for img_count, frame in enumerate(all_frames):
-                #             bb = np.array(f[frame[0]])  # bb : bounding box is one-hot array at bb locations
-                #             bb = bb.transpose()  # change x and y
-                #             img = np.empty(shape=(bb.shape[0], bb.shape[1], 3), dtype=int)  # create RGB image
-                #             for i in range(3):
-                #                 img[:, :, i] = bb*255  # all color channels have bounding box one-hot coding
-                #             if img_count % FRAME_RATE == 0:
-                #                 img_path = save_path + str(img_i).zfill(N_IMG) + ".jpg"
-                #                 assert img.dtype == int
-                #                 cv2.imwrite(img_path, img)
-                #                 img_i += 1
-                #             img_count += 1
-                #
-                # else:
-                video_capture = cv2.VideoCapture(path)
-
-                img_count = 0
-                img_i = 0
-                success = True
-                while success:
-                    success, image = video_capture.read()
-                    try:
-                        if img_count % FRAME_RATE == 0:
-                            img_name = save_path + str(img_i).zfill(N_IMG) + ".jpg"  # save images in video folder
-                            cv2.imwrite(img_name, image)     # save frame as JPEG file
-                            img_i += 1
-                    except:
-                        pass
-                    img_count += 1
-                print('video {}'.format(vid_count))
-            print('Finished {} for {}'.format(activity, 'raw'))
 
     def get_mask(self, activity, video_idx, frame_idx):
         """
@@ -304,57 +132,6 @@ class Human(object):
         # plt.show()
         return keypoints
 
-    def video_to_tfrecords(self,  activity, video_idx, list_keypoints, list_max_bbox, from_dir='processed/',
-                           save_dir='tfrecords/'):
-
-        global N_VID
-
-        save_path = self.path + save_dir
-        make_dir(save_path)
-        video_path = self.path + from_dir + activity + '/' + str(video_idx).zfill(N_VID)
-        os.path.exists(video_path)
-        video_path += '/*.jpg'
-        frame_paths = glob.glob(video_path)
-        out_path = os.path.join(save_path + activity + "_" + str(video_idx).zfill(N_VID) + ".tfrecords")
-
-        print("Converting: " + out_path)
-        with tf.python_io.TFRecordWriter(out_path) as writer:
-            # Iterate over all the image-paths and class-labels.
-            for i, (img_path, keypoints, max_bbox) in enumerate(zip(frame_paths, list_keypoints, list_max_bbox)):
-                # Print the percentage-progress.
-                print_progress(count=i, total=len(frame_paths) - 1)
-                # print(type(keypoints))
-                with open(img_path, 'rb') as f:
-                    img_raw = f.read()
-
-                # Convert the image to raw bytes.
-                # img_bytes = img_raw.tostring()
-                # Create a dict with the data we want to save in the
-                # TFRecords file. You can add more relevant data here.
-                data = \
-                    {
-                        'image': wrap_bytes(img_raw),   # todo do I need to convert to jpg still
-                        'video': wrap_int64(video_idx),
-                        'keypoints': wrap_float32(keypoints),
-                        'bbox_max': wrap_int64(max_bbox)
-                        # 'frame': wrap_int64(frame_idx),
-                        # 'n_frames': wrap_int64(n_frames),
-
-                    }
-
-                # Wrap the data as TensorFlow Features.
-                feature = tf.train.Features(feature=data)
-
-                # Wrap again as a TensorFlow Example.
-                example = tf.train.Example(features=feature)
-
-                # Serialize the data.
-                serialized = example.SerializeToString()
-
-                # Write the serialized data to the TFRecords file.
-
-                writer.write(serialized)
-
     def process(self, save_in_dir='processed/', skip_if_video_exists=True, use_mask=True):
 
         save_path = self.path + save_in_dir
@@ -425,15 +202,15 @@ class Human(object):
                     bb_ymax = max(bbox_idx[0])
                     bb_xmax = max(bbox_idx[1])
 
-                    x = kp[0]
-                    y = kp[1]
+                    kp_x = kp[0]
+                    kp_y = kp[1]
 
                     if use_mask:
 
 
                         # crop with bounding boxes
-                        x = x - bb_xmin  # also crop keypoints
-                        y = y - bb_ymin
+                        kp_x = kp_x - bb_xmin  # also crop keypoints
+                        kp_y = kp_y - bb_ymin
                         img = img[bb_ymin:bb_ymax, bb_xmin:bb_xmax]
                         mask = mask[bb_ymin:bb_ymax, bb_xmin:bb_xmax]
 
@@ -457,8 +234,8 @@ class Human(object):
                                      mode='constant', constant_values=((255, 255), (255, 255), (255, 255)))
 
                         # adjust keypoints to padding
-                        x = x + pad_x
-                        y = y + pad_y
+                        kp_x = kp_x + pad_x
+                        kp_y = kp_y + pad_y
 
                         img = img[0:img_size, 0:img_size, :]  # correct for wrong int rounding, cropping does not change kp
 
@@ -490,29 +267,26 @@ class Human(object):
                             ymax = cy + d
 
                         img = img[ymin:ymax, xmin:xmax, :]  # cut around center of bbox
-                        x += xmin  # keypoints processing
-                        y += ymin
+                        kp_x += xmin  # keypoints processing
+                        kp_y += ymin
 
                         img = img[0:img_size, 0:img_size, :]  # correct for wrong int rounding, cropping does not change kp
                         (h, w, _) = img.shape  # height and width of bbox
 
                     img = img.astype(int)
-                    keypoint_arr = np.concatenate([y, x], axis=0)
+                    keypoint_arr = np.concatenate([kp_y, kp_x], axis=0)
 
                     # Save image
-                    assert(img.shape == (img_size, img_size, 3))  # must be rectangular and same size
-                    assert (img.dtype == int)  # save as int to reduce disk usage
-                    frame_path = frame_path.replace('raw/', save_in_dir)
-                    cv2.imwrite(frame_path, img)  # only if well-tested
+                    img_path = frame_path.replace('raw/', save_in_dir)
 
-                    list_imgpaths.append(frame_path)
+                    save_img(img, img_path, (img_size, img_size, 3))
+
+                    list_imgpaths.append(img_path)
                     list_kp.append(keypoint_arr)
+                to_tfrecords(root_path=self.path, video_name=activity + "_" + str(video_idx).zfill(N_VID), video_idx=video_idx,
+                             list_imgpaths=list_imgpaths, list_keypoints=list_kp, list_masks=None)
                 print('video {}'.format(video_idx))
-                to_tfrecords()
-                self.video_to_tfrecords(activity=activity, video_idx=video_idx, list_keypoints=list_kp, list_max_bbox=list_max_bbox)
             print('Finished {}'.format(activity))
-
-
 
 
 ID_list = ['S1', 'S5', 'S6', 'S7', 'S8', 'S9', 'S11']  # , 'S11']
