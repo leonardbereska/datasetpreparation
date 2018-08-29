@@ -1,3 +1,5 @@
+% Matlab Code for extracting cdf file
+
 activities = ["Directions", "Discussion", "Posing", "Waiting", "Greeting", "Walking"];
 
 for activity = activities

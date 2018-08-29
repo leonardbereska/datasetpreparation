@@ -18,7 +18,6 @@ import re
 # import pysatCDF
 from scipy.misc import imresize
 
-
 def make_dir(path):
     if not os.path.exists(path):
         os.mkdir(path)
@@ -106,6 +105,7 @@ class Birds(object):
         self.img_class = read_table(self.path + 'image_class_labels.txt')
         self.img_path = read_table(self.path + 'images.txt')
         self.bad_categories = read_table(self.path + 'classes_difficult.txt')  # sb: sea bird, bb: big bird, fb: flying bird, cm: camouflage
+        self.n_kp = 15
 
     def is_test_set(self, img_idx):
         return bool(self.train_test[img_idx - 1][1])
@@ -154,7 +154,7 @@ class Birds(object):
                 writer.write(serialized)
 
     def process(self, save_in_dir='processed/', skip_if_video_exists=True, out_shape=(720, 720, 3),
-                only_simple_classes=True, visible_thresh=None, align_parity=True, bb_margin=0.125, exclude_big=True, make_trainset=True):
+                only_simple_classes=True, visible_thresh=None, align_parity=True, bb_margin=0.125, exclude_big=True, make_trainset=True, make_tfrecords=False):
 
         save_path = self.path + save_in_dir
         make_dir(save_path)
@@ -318,14 +318,31 @@ class Birds(object):
                 frame_path = image_path.replace('images/', save_in_dir)
                 cv2.imwrite(frame_path, img)  # only if well-tested
 
-                # add relevant info to lists
+                # add relevant info to lists (for tfrecords)
                 list_imgpaths.append(frame_path)
                 list_max_bbox.append(max_bbox)
                 list_kp.append(kp)
                 list_masks.append(kp_visible)
 
+                # kp to txt file:
+                testtrain = ['test', 'train']
+                with open(self.path + 'y_{}.txt'.format(testtrain[make_trainset]), 'a') as f:
+                    shape = (self.n_kp, 1)
+                    img_idx = np.full(shape, fill_value=i+1)   # +1 for starting at 1
+                    kp_idx = np.reshape(np.arange(self.n_kp)+1, shape)  # +1 for starting at 1
+                    kp_out = np.transpose(np.reshape(kp, (2, self.n_kp)))
+                    kp_vis = np.reshape(kp_visible, newshape=shape)
+                    out = np.concatenate((img_idx, kp_idx, kp_out, kp_vis), axis=1)
+                    f.write("\n".join(" ".join(map(str, x)) for x in out)+'\n')
+
+                # train/test split text file
+                with open(self.path + '{}_img.txt'.format(testtrain[make_trainset]), 'a') as f:
+                    relative_path = os.path.relpath(frame_path, self.path)
+                    f.write('{} {}\n'.format(i+1, relative_path))
+
             print('video {}'.format(cat_name))
-            self.to_tfrecords(cat_name, cat_idx, list_imgpaths, list_kp, list_max_bbox, list_masks)  # save in tfrecords
+            if make_tfrecords:
+                self.to_tfrecords(cat_name, cat_idx, list_imgpaths, list_kp, list_max_bbox, list_masks)  # save in tfrecords
 
 
 path_to_root = '/Users/leonardbereska/myroot/'
@@ -337,7 +354,7 @@ assert os.path.exists(path)
 mybirds = Birds(path_to_dataset=path)
 
 mybirds.process(save_in_dir='processed/', out_shape=(720, 720, 3),
-                only_simple_classes=False, visible_thresh=0.0, align_parity=False, bb_margin=0.0, exclude_big=False, make_trainset=True)
+                only_simple_classes=True, visible_thresh=0.8, align_parity=True, bb_margin=0.0, exclude_big=True, make_trainset=False)
 
 
 # Pre-processing Protocol
@@ -345,7 +362,7 @@ mybirds.process(save_in_dir='processed/', out_shape=(720, 720, 3),
 # - resize to quadratic
 # - center on bbox
 # - excluded classes: seabirds, flying birds, camouflage and bigger birds
-# - mirrored edges (used bbox), excluded too big birds (is this not included in excluding hidden)
+# - mirrored edges (used bbox), excluded too big birds (is this not included in excluding hidden)  # which bb_margin?
 # - exclude frontal view (used eye kp)
 # - align parity (used eye kp)  -> most important step
 # - exclude hidden (used all kp visibility: threshold 0.8)

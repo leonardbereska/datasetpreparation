@@ -16,6 +16,7 @@ import os
 import re
 # import py
 # import pysatCDF
+from helpers import to_tfrecords
 
 
 FRAME_RATE = 10
@@ -122,7 +123,7 @@ def wrap_bytes(value):
 #                 writer.write(serialized)
 
 
-class Human3dot6(object):
+class Human(object):
     def __init__(self, path_to_dataset):
         # self.activities = ['directions', 'discussion', 'posing', 'waiting', 'greeting', 'walking', 'sitting', 'photo']
         self.activities = ['posing']
@@ -378,7 +379,7 @@ class Human3dot6(object):
                         print('warning: video {} for {} exists, overwriting existing video'.format(video_idx, activity))
 
                 list_kp = []
-                list_max_bbox = []
+                list_imgpaths = []
                 for frame_idx, frame_path in enumerate(frames):
 
                     # get data for respective activity, video_idx, frame_idx
@@ -494,7 +495,6 @@ class Human3dot6(object):
 
                         img = img[0:img_size, 0:img_size, :]  # correct for wrong int rounding, cropping does not change kp
                         (h, w, _) = img.shape  # height and width of bbox
-                        max_bbox = np.max([h, w])
 
                     img = img.astype(int)
                     keypoint_arr = np.concatenate([y, x], axis=0)
@@ -505,49 +505,14 @@ class Human3dot6(object):
                     frame_path = frame_path.replace('raw/', save_in_dir)
                     cv2.imwrite(frame_path, img)  # only if well-tested
 
+                    list_imgpaths.append(frame_path)
                     list_kp.append(keypoint_arr)
-                    list_max_bbox.append(max_bbox)
                 print('video {}'.format(video_idx))
-
+                to_tfrecords()
                 self.video_to_tfrecords(activity=activity, video_idx=video_idx, list_keypoints=list_kp, list_max_bbox=list_max_bbox)
             print('Finished {}'.format(activity))
 
-    # def read_activity(self, activity, read_dir):
-    #     list_img_paths = []
-    #     list_video_idxs = []
-    #     list_frame_idxs = []
-    #     list_max_frame_idx = []
-    #
-    #     video_dir = self.path + read_dir + activity + "/"
-    #     assert(os.path.exists(video_dir))
-    #     videos = glob.glob(video_dir + '*')
-    #     for video_idx, video in enumerate(videos):
-    #         frame_list = sorted(glob.glob(video + "/*"), key=alphanum_key)
-    #         img_paths = []
-    #         video_idxs = []
-    #         frame_idxs = []
-    #         max_frame_idx = []
-    #         n_frames = len(frame_list)
-    #         for f_idx, img_path in enumerate(frame_list):
-    #             img_paths.append(img_path)
-    #             video_idxs.append(video_idx)
-    #             frame_idxs.append(f_idx)
-    #             max_frame_idx.append(n_frames)
-    #
-    #         list_img_paths.append(img_paths)
-    #         list_video_idxs.append(video_idxs)
-    #         list_frame_idxs.append(frame_idxs)
-    #         list_max_frame_idx.append(max_frame_idx)
-    #
-    #     return {"img_paths": list_img_paths, "video_idxs": list_video_idxs, "frame_idxs": list_frame_idxs, "max_frame_idxs": list_max_frame_idx}
 
-    # def build_tfrecord(self, from_dir, save_dir):
-    #     save_path = self.path + save_dir
-    #     make_dir(save_path)
-    #
-    #     for activ in self.activities:
-    #         data = self.read_activity(activ, read_dir=from_dir)
-    #         convert(data, activ, save_path)
 
 
 ID_list = ['S1', 'S5', 'S6', 'S7', 'S8', 'S9', 'S11']  # , 'S11']
@@ -559,7 +524,7 @@ for ID in ID_list:
 
     path = path_to_harddrive + ID + '/'
 
-    myhuman = Human3dot6(path_to_dataset=path)
+    myhuman = Human(path_to_dataset=path)
     # build in the following order
     # myhuman.convert_mg4_to_img()  # 1. extracts every nth frame of the mp4
     myhuman.process(save_in_dir='processed/', use_mask=False)  # 2. masks out background

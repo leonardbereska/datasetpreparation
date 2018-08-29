@@ -1,27 +1,10 @@
 import numpy as np
 import glob
 import cv2
-import tensorflow as tf
 import os
 import scipy.io as sio
 from scipy.misc import imresize
-
-
-def make_dir(path):
-    if not os.path.exists(path):
-        os.mkdir(path)
-
-
-def wrap_int64(value):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
-
-def wrap_float32(value):
-    return tf.train.Feature(float_list=tf.train.FloatList(value=value))  # wtf only float
-
-
-def wrap_bytes(value):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+from helpers import to_tfrecords, make_dir
 
 
 class PennAction(object):
@@ -45,71 +28,18 @@ class PennAction(object):
         # keypoints
         # 1. head
         # 2. left_shoulder
-        # 3.
-        # right_shoulder
-        # 4.
-        # left_elbow
-        # 5.
-        # right_elbow
-        # 6.
-        # left_wrist
-        # 7.
-        # right_wrist
-        # 8.
-        # left_hip
-        # 9.
-        # right_hip
-        # 10.
-        # left_knee
-        # 11.
-        # right_knee
-        # 12.
-        # left_ankle
-        # 13.
-        # right_ankle
+        # 3. right_shoulder
+        # 4. left_elbow
+        # 5. right_elbow
+        # 6. left_wrist
+        # 7. right_wrist
+        # 8. left_hip
+        # 9. right_hip
+        # 10. left_knee
+        # 11. right_knee
+        # 12. left_ankle
+        # 13. right_ankle
 
-    def video_to_tfrecords(self, video_idx, list_imgpaths, list_keypoints, list_max_bbox, list_masks, action, save_path):
-        """
-        Create tfrecords file from video
-        :param video_idx: int index of video
-        :param list_imgpaths: all image paths in video
-        :param list_keypoints: all keypoints as numpy array
-        :param list_max_bbox: list of maxima of bounding box width/height
-        :return:
-        """
-        out_path = os.path.join(save_path + action + "_" + str(video_idx+1).zfill(4) + ".tfrecords")
-
-        print("Converting: " + out_path)
-        with tf.python_io.TFRecordWriter(out_path) as writer:
-            # Iterate over all the image-paths and class-labels.
-            for i, (img_path, keypoints, max_bbox, mask) in enumerate(zip(list_imgpaths, list_keypoints, list_max_bbox, list_masks)):
-                with open(img_path, 'rb') as f:
-                    img_raw = f.read()
-
-                # Convert the image to raw bytes.
-                # img_bytes = img_raw.tostring()
-                # Create a dict with the data we want to save in the
-                # TFRecords file. You can add more relevant data here.
-                data = {'image': wrap_bytes(img_raw),
-                        'video': wrap_int64(video_idx),
-                        'keypoints': wrap_float32(keypoints),
-                        'bbox_max': wrap_int64(max_bbox),
-                        'masks': wrap_float32(mask),
-
-                }
-
-                # Wrap the data as TensorFlow Features.
-                feature = tf.train.Features(feature=data)
-
-                # Wrap again as a TensorFlow Example.
-                example = tf.train.Example(features=feature)
-
-                # Serialize the data.
-                serialized = example.SerializeToString()
-
-                # Write the serialized data to the TFRecords file.
-
-                writer.write(serialized)
 
     def process(self):
         dir = 'processed/'
@@ -150,7 +80,6 @@ class PennAction(object):
 
             list_imgpaths = []
             list_keypoints = []
-            list_max_bbox = []
             list_masks = []
 
             frames = sorted(glob.glob(video + '/*'))
@@ -171,7 +100,6 @@ class PennAction(object):
                     print('bbox_w {}, bbox_h {} in frame {}, video {}, continue..'.format(bb_w, bb_h, frame_idx, video_idx))
                     continue
                 center = [int((bb[2] + bb[0]) / 2), int((bb[3] + bb[1]) / 2)]  # x, y
-
 
                 # pad
                 pad_x = self.max_dim[0]
@@ -253,12 +181,12 @@ class PennAction(object):
 
                 mask = mask.astype(np.float32)
                 list_masks.append(mask)
-                list_max_bbox.append(max_bbox)
 
             save_path = self.path + 'tfrecords/' + traintest
             make_dir(save_path)
-            self.video_to_tfrecords(video_idx, list_imgpaths, list_keypoints, list_max_bbox, list_masks, action, save_path)  # todo tfrecords train test
-            print('{}'.format(video_idx))
+            out_path = os.path.join(save_path + action + "_" + str(video_idx + 1).zfill(4) + ".tfrecords")
+
+            to_tfrecords(out_path, video_idx, list_imgpaths, list_keypoints, list_masks)  # todo tfrecords train test
 
 
 path = '../../../../myroot/penn/'

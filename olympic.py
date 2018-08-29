@@ -5,23 +5,7 @@ import tensorflow as tf
 import os
 import scipy.io as sio
 from scipy.misc import imresize
-
-
-def make_dir(path):
-    if not os.path.exists(path):
-        os.mkdir(path)
-
-
-def wrap_int64(value):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
-
-def wrap_float32(value):
-    return tf.train.Feature(float_list=tf.train.FloatList(value=value))  # wtf only float
-
-
-def wrap_bytes(value):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+from helpers import to_tfrecords, make_dir
 
 
 class Olympic(object):
@@ -44,47 +28,6 @@ class Olympic(object):
         self.selected_actions = ['long_jump']
         self.bbox_factor = 2.
 
-    def video_to_tfrecords(self, video_idx, list_imgpaths, list_keypoints, list_max_bbox, list_masks, action, save_path):
-        """
-        Create tfrecords file from video
-        :param video_idx: int index of video
-        :param list_imgpaths: all image paths in video
-        :param list_keypoints: all keypoints as numpy array
-        :param list_max_bbox: list of maxima of bounding box width/height
-        :return:
-        """
-        out_path = os.path.join(save_path + action + "_" + str(video_idx+1).zfill(4) + ".tfrecords")
-
-        print("Converting: " + out_path)
-        with tf.python_io.TFRecordWriter(out_path) as writer:
-            # Iterate over all the image-paths and class-labels.
-            for i, (img_path, keypoints, max_bbox) in enumerate(zip(list_imgpaths, list_keypoints, list_max_bbox)):
-                with open(img_path, 'rb') as f:
-                    img_raw = f.read()
-
-                # Convert the image to raw bytes.
-                # img_bytes = img_raw.tostring()
-                # Create a dict with the data we want to save in the
-                # TFRecords file. You can add more relevant data here.
-                data = {'image': wrap_bytes(img_raw),
-                        'video': wrap_int64(video_idx),
-                        'keypoints': wrap_float32(keypoints),
-                        'bbox_max': wrap_int64(max_bbox)
-                }
-
-                # Wrap the data as TensorFlow Features.
-                feature = tf.train.Features(feature=data)
-
-                # Wrap again as a TensorFlow Example.
-                example = tf.train.Example(features=feature)
-
-                # Serialize the data.
-                serialized = example.SerializeToString()
-
-                # Write the serialized data to the TFRecords file.
-
-                writer.write(serialized)
-
     def make_train_test_lists(self):
         path = self.path + 'train_test_split/'
         test_path = path + 'test/*'
@@ -103,7 +46,6 @@ class Olympic(object):
                 data = file.read()
                 self.train_list += data.split('\n')
 
-
     def process(self):
         dir = 'processed/'
         make_dir(self.path + dir)
@@ -111,15 +53,12 @@ class Olympic(object):
         make_dir(self.path + dir + 'test/')
         make_dir(self.path + 'tfrecords/')
 
-
         # actions = glob.glob(self.path_data + '*')
         # actions = [a.split('/').pop() for a in actions]
         for action in self.selected_actions:
             assert action in self.all_actions
             make_dir(self.path+dir+'train/'+action + '/')
             make_dir(self.path+dir+'test/'+action+ '/')
-
-
 
             video_paths = glob.glob(self.path_data + action + '/*')
             for video_idx, video_path in enumerate(video_paths):
@@ -244,7 +183,9 @@ class Olympic(object):
 
                 save_path = self.path + 'tfrecords/' + train
                 make_dir(save_path)
-                self.video_to_tfrecords(video_idx, list_imgpaths, list_keypoints, list_max_bbox, list_masks, action, save_path)  # todo tfrecords train test
+                out_path = os.path.join(save_path + action + "_" + str(video_idx + 1).zfill(4) + ".tfrecords")
+                to_tfrecords(out_path, video_idx, list_imgpaths, list_keypoints, list_masks)
+
                 print('{}'.format(video_idx))
 
 

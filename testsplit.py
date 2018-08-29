@@ -34,7 +34,7 @@ def make_train_test_split(all_paths, train_test_ratio):
     return list_train, list_test
 
 
-def write_to_txt(list, name):
+def list_to_txt(list, name):
     with open(name, 'w+') as file:
         for i, img_path in enumerate(list):
             file.write(img_path + '\n')
@@ -45,5 +45,5 @@ path = path_to_root + 'birds_big_processed/'
 
 all_img_paths = get_all_img_paths(path)
 list_train, list_test = make_train_test_split(all_img_paths, train_test_ratio=0.8)
-write_to_txt(list_train, 'birds_train.txt')
-write_to_txt(list_test, 'birds_test.txt')
+list_to_txt(list_train, 'birds_train.txt')
+list_to_txt(list_test, 'birds_test.txt')

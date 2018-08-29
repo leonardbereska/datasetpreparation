@@ -1,25 +1,7 @@
 import numpy as np
 import glob
-import cv2
-import tensorflow as tf
 import os
-
-
-def make_dir(path):
-    if not os.path.exists(path):
-        os.mkdir(path)
-
-
-def wrap_int64(value):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
-
-def wrap_float32(value):
-    return tf.train.Feature(float_list=tf.train.FloatList(value=value))  # wtf only float
-
-
-def wrap_bytes(value):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+from helpers import to_tfrecords, make_dir
 
 
 class CelebA(object):
@@ -29,11 +11,6 @@ class CelebA(object):
         self.keypoints = self.get_kp()  # comment out for speed
         self.bboxes = self.get_bb()
         # self.n_images
-
-    # todo train/test split (MAFL dataset)
-    # Eval/ Test set partition:
-        # from 162771.jpg 1 eval
-        # from 182638.jpg 2 test set
 
     def make_videos(self, path_to_data):
         """
@@ -56,60 +33,16 @@ class CelebA(object):
                 length = len(list_imgpaths)
 
             list_keypoints = self.keypoints[from_:to_]
-            my_bboxes = self.bboxes[from_:to_]
-            list_max_bbox = []
-            for img_idx in range(length):
-                max_ = max(my_bboxes[img_idx, 2:])  # get maximum of width and height
-                list_max_bbox.append(max_)
+            # my_bboxes = self.bboxes[from_:to_]
+            #
+            # for img_idx in range(length):
+            #     max_ = max(my_bboxes[img_idx, 2:])  # get maximum of width and height
+            #     list_max_bbox.append(max_)
+            #     kp = self.keypoints[from_:to_]
 
-            self.to_tf_records(video_idx, list_imgpaths, list_keypoints, list_max_bbox)
+            to_tfrecords(root_path=self.path, video_name=str(video_idx).zfill(2), video_idx=video_idx,
+                         list_imgpaths=list_imgpaths, list_keypoints=list_keypoints, list_masks=None)
             print('{}/{}'.format(video_idx, n_videos))
-        # except IndexError:
-        #     print('Finished conversion')
-
-    def to_tf_records(self, video_idx, list_imgpaths, list_keypoints, list_max_bbox, save_dir='tfrecords/'):
-        """
-        Create tfrecords file from video
-        :param video_idx: int index of video
-        :param list_imgpaths: all image paths in video
-        :param list_keypoints: all keypoints as numpy array
-        :param list_max_bbox: list of maxima of bounding box width/height
-        :return:
-        """
-        save_path = self.path + save_dir
-        make_dir(save_path)
-        out_path = os.path.join(save_path + "_" + str(video_idx).zfill(2) + ".tfrecords")
-
-        print("Converting: " + out_path)
-        with tf.python_io.TFRecordWriter(out_path) as writer:
-            # Iterate over all the image-paths and class-labels.
-            for i, (img_path, keypoints, max_bbox) in enumerate(zip(list_imgpaths, list_keypoints, list_max_bbox)):
-                with open(img_path, 'rb') as f:
-                    img_raw = f.read()
-
-                # Convert the image to raw bytes.
-                # img_bytes = img_raw.tostring()
-                # Create a dict with the data we want to save in the
-                # TFRecords file. You can add more relevant data here.
-                data = {'image': wrap_bytes(img_raw),
-                        'video': wrap_int64(video_idx),
-                        'keypoints': wrap_float32(keypoints),
-                        'bbox_max': wrap_int64(max_bbox)
-
-                }
-
-                # Wrap the data as TensorFlow Features.
-                feature = tf.train.Features(feature=data)
-
-                # Wrap again as a TensorFlow Example.
-                example = tf.train.Example(features=feature)
-
-                # Serialize the data.
-                serialized = example.SerializeToString()
-
-                # Write the serialized data to the TFRecords file.
-
-                writer.write(serialized)
 
     def get_kp(self):
         """
@@ -180,48 +113,21 @@ class CelebA(object):
 
             list_imgpaths = []
             list_keypoints = []
-            list_max_bbox = []
+            # list_max_bbox = []
 
             for i, test_id in enumerate(id_list):
                 image_path = self.path + 'img_align_celeba/' + test_id
                 img_id = test_id.replace('.jpg', '')
                 idx = int(img_id) - 1  # 0th element is 000001.jpg
                 kp = self.keypoints[idx, :]
-                max_bbox = np.max(self.bboxes[idx, :2])
+                # max_bbox = np.max(self.bboxes[idx, :2])
                 print(img_id)
 
                 list_imgpaths.append(image_path)
                 list_keypoints.append(kp)
-                list_max_bbox.append(max_bbox)
-            self.to_tf_records(video_idx=0, list_imgpaths=list_imgpaths, list_keypoints=list_keypoints, list_max_bbox=list_max_bbox)
 
-                # def make_mafl(self, mode):
-    # #     self.path
-    #     length = 1000  # length of one video
-    #     n_videos = int(self.n_images / length) + 1  # rounding up here, todo dirty
-    #     all_images = glob.glob(path_to_data + '*')
-    #
-    #     for video_idx in range(n_videos):
-    #         from_ = video_idx * length
-    #         to_ = (video_idx + 1) * length
-    #         try:
-    #             list_imgpaths = all_images[from_:to_]  # todo exclude mafl
-    #         except IndexError:
-    #             to_ = -1
-    #             list_imgpaths = all_images[from_:to_]
-    #             length = len(list_imgpaths)
-    #
-    #         list_keypoints = self.keypoints[from_:to_]
-    #         my_bboxes = self.bboxes[from_:to_]
-    #         list_max_bbox = []
-    #         for img_idx in range(length):
-    #             max_ = max(my_bboxes[img_idx, 2:])  # get maximum of width and height
-    #             list_max_bbox.append(max_)
-    #
-    #         self.to_tf_records(video_idx, list_imgpaths, list_keypoints, list_max_bbox)
-    #         print('{}/{}'.format(video_idx, n_videos))
-    #         # except IndexError:
-    #         #     print('Finished conversion')
+            to_tfrecords(video_name=0, video_idx=0, list_imgpaths=list_imgpaths, list_keypoints=list_keypoints, list_masks=None)
+
 
 path_to_dataset = '../../../../myroot/celeba/'
 assert os.path.exists(path_to_dataset)

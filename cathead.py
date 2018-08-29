@@ -4,22 +4,7 @@ import cv2
 import tensorflow as tf
 import os
 from scipy.misc import imresize
-
-def make_dir(path):
-    if not os.path.exists(path):
-        os.mkdir(path)
-
-
-def wrap_int64(value):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
-
-def wrap_float32(value):
-    return tf.train.Feature(float_list=tf.train.FloatList(value=value))  # wtf only float
-
-
-def wrap_bytes(value):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+from helpers import to_tfrecords, make_dir
 
 
 class CatHead(object):
@@ -75,7 +60,7 @@ class CatHead(object):
 
             list_imgpaths = []
             list_keypoints = []
-            list_max_bbox = []
+            list_masks = []
 
             for image_idx, image_path in enumerate(img_paths):
 
@@ -159,57 +144,14 @@ class CatHead(object):
                 kp = np.concatenate([kp_x, kp_y], axis=0)
                 list_keypoints.append(kp)
 
-                max_bbox = np.max([bb_w, bb_h])
-                list_max_bbox.append(max_bbox)
+                # max_bbox = np.max([bb_w, bb_h])
+                # list_max_bbox.append(max_bbox)
+                mask = kp_x * 0. + 1. # todo check
+                list_masks.append(mask) # todo
 
-            self.to_tf_records(video_idx, list_imgpaths, list_keypoints, list_max_bbox)
-        #     print('{}/{}'.format(video_idx, n_videos))
-        # # except IndexError:
-        # #     print('Finished conversion')
-
-    def to_tf_records(self, video_idx, list_imgpaths, list_keypoints, list_max_bbox, save_dir='tfrecords/'):
-        """
-        Create tfrecords file from video
-        :param video_idx: int index of video
-        :param list_imgpaths: all image paths in video
-        :param list_keypoints: all keypoints as numpy array
-        :param list_max_bbox: list of maxima of bounding box width/height
-        :return:
-        """
-        save_path = self.path + save_dir
-        make_dir(save_path)
-        out_path = os.path.join(save_path + "_" + str(video_idx).zfill(2) + ".tfrecords")
-
-        print("Converting: " + out_path)
-        with tf.python_io.TFRecordWriter(out_path) as writer:
-            # Iterate over all the image-paths and class-labels.
-            for i, (img_path, keypoints, max_bbox) in enumerate(zip(list_imgpaths, list_keypoints, list_max_bbox)):
-                with open(img_path, 'rb') as f:
-                    img_raw = f.read()
-
-                # Convert the image to raw bytes.
-                # img_bytes = img_raw.tostring()
-                # Create a dict with the data we want to save in the
-                # TFRecords file. You can add more relevant data here.
-                data = {'image': wrap_bytes(img_raw),
-                        'video': wrap_int64(video_idx),
-                        'keypoints': wrap_float32(keypoints),
-                        'bbox_max': wrap_int64(max_bbox)
-
-                }
-
-                # Wrap the data as TensorFlow Features.
-                feature = tf.train.Features(feature=data)
-
-                # Wrap again as a TensorFlow Example.
-                example = tf.train.Example(features=feature)
-
-                # Serialize the data.
-                serialized = example.SerializeToString()
-
-                # Write the serialized data to the TFRecords file.
-
-                writer.write(serialized)
+            make_dir(self.path + 'tfrecords/')
+            out_path = os.path.join(self.path + 'tfrecords/' + "_" + str(video_idx).zfill(2) + ".tfrecords")
+            to_tfrecords(out_path, video_idx, list_imgpaths, list_keypoints, list_masks)
 
     def get_test_train_split(self):
         """
