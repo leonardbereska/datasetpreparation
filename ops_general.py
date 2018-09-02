@@ -42,7 +42,8 @@ def show_img(img):
     plt.show(block=False)
 
 
-def show_kp(img, kp_x, kp_y):
+def show_kp(img, kp):
+    kp_x, kp_y = kp
     plt.imshow(img)
     plt.scatter(kp_x, kp_y)
     plt.show(block=False)
@@ -143,128 +144,95 @@ def to_tfrecords(root_path, video_name, video_idx, list_imgpaths, list_keypoints
 
 def kp_to_txt(root_path, n_kp, kp, kp_visible, test_or_train, i, frame_path):
     # kp to txt file:
+    shape = (n_kp, 1)
+    if kp_visible is None:  # kp always visible if no kp mask
+        kp_visible = np.ones(shape=shape)
     testtrain = ['test', 'train']
     with open(root_path + 'y_{}.txt'.format(testtrain[test_or_train]), 'a') as f:
-        shape = (n_kp, 1)
-        img_idx = np.full(shape, fill_value=i)  # +1 for starting at 1
-        kp_idx = np.reshape(np.arange(n_kp) + 1, shape)  # +1 for starting at 1
+        img_idx = np.full(shape, fill_value=i)  # todo solve +1 for starting at 1
+        kp_idx = np.reshape(np.arange(n_kp), shape)  # +1 for starting at 1
         kp_out = np.transpose(np.reshape(kp, (2, n_kp)))
         kp_vis = np.reshape(kp_visible, newshape=shape)
+
+        img_idx = (img_idx.astype(int).astype(str))
+        kp_idx = (kp_idx.astype(int).astype(str))
+        kp_out = (np.round(kp_out.astype(float), 2).astype(str))
+        kp_vis = (kp_vis.astype(int).astype(str))
         out = np.concatenate((img_idx, kp_idx, kp_out, kp_vis), axis=1)
+
         f.write("\n".join(" ".join(map(str, x)) for x in out) + '\n')
 
     # train/test split text file
     with open(root_path + '{}_img.txt'.format(testtrain[test_or_train]), 'a') as f:
         relative_path = os.path.relpath(frame_path, root_path)
-        f.write('{} {}\n'.format(i + 1, relative_path))
+        f.write('{} {}\n'.format(i, relative_path))
 
 
-#######################################################################################################################
-# VIDEO OPS
-#######################################################################################################################
+def img_to_video(img):
+    # TODO does not work so far
+    # TODO have to check
+    image_folder = '../../../../myroot/new/0'
+    video_name = 'video.avi'
 
-def down_sample(path_to_video, save_path):
-    """Select specific video with a high frame rate, to downsample by factor of 2"""
-    image_paths = glob.glob(path_to_video + '*')
-    image_paths = image_paths[::2]
-    make_dir(save_path)
-    for i, image_path in enumerate(image_paths):
-        cv2.imwrite(save_path + str(i + 1).zfill(4) + '.jpg', cv2.imread(image_path))
+    images = [img for img in os.listdir(image_folder) if img.endswith(".png")]
+    frame = cv2.imread(os.path.join(image_folder, images[0]))
+    height, width, layers = frame.shape
 
+    video = cv2.VideoWriter(video_name, -1, 1, (width, height))
 
-def left_to_right(path_to_video, save_path):
-    image_paths = glob.glob(path_to_video + '/*')
-    make_dir(save_path)
-    for i, image_path in enumerate(image_paths):
-        image = cv2.imread(image_path)
-        image_rev = image[:, ::-1, :]
-        cv2.imwrite(save_path + str(i + 1).zfill(4) + '.jpg', image_rev)
+    for image in images:
+        video.write(cv2.imread(os.path.join(image_folder, image)))
+
+    cv2.destroyAllWindows()
+    video.release()
 
 
-def extract_frames(root_path, from_dir='exported', to_dir='raw', video_format='mp4', img_format='jpg', frame_rate=2,
-                   deinterlace=True):
+"""
+Make train-test split
+- Extracts all image paths from folder structure, 
+- make a train-test-split 
+- and write these paths to text files.
+"""
+
+
+def get_all_img_paths(path_to_folder):
     """
-    Converts video from mp4/mov to img frames
-    assumes all videos in one directory
+    Get all paths to images in the folder and subfolders
+    :return: relative_paths
     """
-
-    o_img = 4  # order of magnitude: maximum number of images for each activity: 10^img
-    # o_vid = 2  # save for videos
-    make_dir(root_path + to_dir)
-    video_paths = glob.glob(root_path + from_dir + '/*')  # can use other format also e.g. .avi
-
-    for video_idx, video_path in enumerate(video_paths):
-        video_name = video_path.split('/').pop()  # e.g. afghan_hound.mp4
-        video_name = video_name.replace('.{}'.format(video_format), '')  # e.g. afghan_hound
-        save_path = root_path + to_dir + '/' + video_name + '/'
-
-        if not make_dir(save_path):
-            print('warning: {} folder exists, skipping...'.format(video_name))
-            continue
-
-        video_capture = cv2.VideoCapture(video_path)
-
-        img_count = 0
-        img_i = 0
-        success = True
-        while success:
-            success, image = video_capture.read()
-            try:
-                if img_count % frame_rate == 0:
-                    img_name = save_path + str(img_i).zfill(o_img) + '.' + img_format  # save images in video folder
-
-                    if deinterlace:
-                        # de-interlacing: delete every second row and column
-                        image = image[::2, ::2, :]
-
-                    cv2.imwrite(img_name, image)  # save frame as JPEG file
-                    img_i += 1
-            except:
-                print('could not extract frame, continuing...')
-                pass
-            img_count += 1
-        print('Finished extracting video {}/{}: {}'.format(video_idx, len(video_paths), video_name))
+    all_subfolders = glob.glob(path_to_folder + '*')
+    all_paths = []
+    for folder in all_subfolders:
+        all_paths.extend(glob.glob(folder + '/*'))
+    # get relative paths
+    common_prefix = path_to_folder
+    relative_paths = [os.path.relpath(path, common_prefix) for path in all_paths]
+    return relative_paths
 
 
-def rename_files(root_path, bg0=False, start_id=0):
-    # files = glob.glob(path + 'tfrecords/*')
-    files = glob.glob(root_path + 'rename/*')
+def make_train_test_split(all_paths, train_test_ratio):
 
-    for i, file in enumerate(files):
-        # os.rename(file, file.replace('exported/', 'exported/'+str.zfill(str(i), 2)))
-        # os.rename(file, file.replace('.tfrecords', '-'+'.tfrecords'))
-        # n, s, a, tf = file.split('-')
-        # os.rename(file, n + '-' + a + '-' + s + '-' + tf)
+    # random split
+    np.random.seed(1)
+    train_size = int(len(all_paths)*train_test_ratio)
+    index_list = np.random.choice(range(len(all_paths)), size=train_size, replace=None)
+    list_train = [all_paths[i] for i in index_list]
+    list_test = sorted(list(set(all_paths) - set(list_train)))
+    return list_train, list_test
 
-        a = i % 5
-        s = int(i / 5)
-        new_name = str.zfill(str(i), 4) + '-' + str(a) + '-' + str.zfill(str(s), 3)
 
-        os.rename(file, root_path + new_name)
+def list_to_txt(list, name):
+    with open(name, 'w+') as file:
+        for i, img_path in enumerate(list):
+            file.write(img_path + '\n')
 
-    # # files = glob.glob(path + 'tfrecords/*')
-    # subject_files = glob.glob(path + 'rename/' + '*')
-    # i_b = 1  # start at one (0 is for other dataset)
-    # for i_s, file_s in enumerate(subject_files):
-    #     # os.rename(file, file.replace('exported/', 'exported/'+str.zfill(str(i), 2)))
-    #     # os.rename(file, file.replace('.tfrecords', '-'+'.tfrecords'))
-    #     # n, s, a, tf = file.split('-')
-    #     # os.rename(file, n + '-' + a + '-' + s + '-' + tf)
-    #     # subject_name = file.split('/')[-1]
-    #     # os.rename(file_s, path + 's' + str(i_s))
-    #     s = str.zfill(str(i_s+start_id), 3)
-    #     backgr_files = glob.glob(file_s + '/*')
-    #     for file_b in backgr_files:
-    #         if file_b.split('/')[-1] == 'x':
-    #             b = 'xxx'
-    #         else:
-    #             b = str.zfill(str(i_b), 3)
-    #         i_b += 1
-    #         videos = glob.glob(file_b + '/*')
-    #         for i_v, file_v in enumerate(videos):
-    #             v = str(i_v)
-    #             if bg0:
-    #                 b = '000'
-    #             new_name = path + 'exported/' + 's' + s + '-b' + b + '-a' + v
-    #             os.rename(file_v, new_name)
+
+# path_to_root = '/Users/leonardbereska/myroot/'
+# path = path_to_root + 'birds_big_processed/'
+#
+# all_img_paths = get_all_img_paths(path)
+# list_train, list_test = make_train_test_split(all_img_paths, train_test_ratio=0.8)
+# list_to_txt(list_train, 'birds_train.txt')
+# list_to_txt(list_test, 'birds_test.txt')
+
 

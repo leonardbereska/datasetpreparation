@@ -23,7 +23,12 @@ def pad_img(img, pad=[1000, 1000], kp=None, center=None, mode='symmetric'):
     if center is not None:
         center[0] += float(pad_x)
         center[1] += float(pad_y)
-    img = np.lib.pad(img, ((pad_y, pad_y), (pad_x, pad_x), (0, 0)), mode)
+    if mode == 'symmetric':
+        img = np.lib.pad(img, ((pad_y, pad_y), (pad_x, pad_x), (0, 0)), mode)
+    elif mode == 'constant':
+        img = np.lib.pad(img, ((pad_y, pad_y), (pad_x, pad_x), (0, 0)), mode, constant_values=((255, 255), (255, 255), (255, 255)))
+    else:
+        raise NotImplementedError
     return img, kp, center
 
 
@@ -88,7 +93,7 @@ def double_margin(img_, new_margin, kp, c, ratio, l, bb_w, bb_h):
     kp_x, kp_y = kp
     p = int((ratio - 1) / 2 * l)
     pad = [p, p]
-    ima_, kp, c = pad_img(img_, pad, kp, c)
+    img_, kp, c = pad_img(img_, pad, kp, c)
 
     bb_ratio_crit = 1. + new_margin * 2
     (new_h, new_w, _) = img_.shape
@@ -105,15 +110,16 @@ def double_margin(img_, new_margin, kp, c, ratio, l, bb_w, bb_h):
     return img_, kp, c
 
 
-def pad_crop_resize(image, crop, to_shape):
-    h, w, center = get_image_data(image)
+def pad_crop_resize(image, crop, to_shape, kp=None, center=None):
+    if center is None:
+        h, w, center = get_image_data(image)
 
     # pad
-    image, _, center = pad_img(image, center=center)
+    image, kp, center = pad_img(image, center=center, kp=kp)
 
     # crop around center
-    image, _, center = crop_img(image, crop, center)
+    image, kp, center = crop_img(image, crop, center=center, kp=kp)
 
     # resize to final shape
-    image, _, center = resize_img(image, to_shape, center=center)
-    return image
+    image, kp, center = resize_img(image, to_shape, center=center, kp=kp)
+    return image, kp, center

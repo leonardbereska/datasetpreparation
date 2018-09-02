@@ -5,7 +5,7 @@ require:
 - pred kp txt file (train+test)
 """
 import os
-from ops import read_table
+from ops_general import read_table
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
