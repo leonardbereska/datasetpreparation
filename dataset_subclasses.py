@@ -4,6 +4,8 @@ import numpy as np
 import os
 import scipy.io as sio
 import h5py
+import timeit
+
 
 from dataset_class import Dataset
 from ops_image import pad_img, crop_img, resize_img, pad_crop_resize, double_margin, get_bb, invert_img
@@ -317,8 +319,11 @@ class Human(Dataset):
 
             img, kp, center = pad_img(img, kp=kp, center=center, mode='constant')
 
-            crop = (self.res, self.res)
-            img, kp, center = crop_img(img, crop, center, kp)
+            c = int(max_bbox)
+            crop = (c, c)
+            img, kp, center = crop_img(img, crop=crop, center=center, kp=kp)
+
+            img, kp, center = resize_img(img, to_shape=self.shape, center=center, kp=kp)
 
         else:
             crop = [max_bbox, max_bbox]
@@ -329,7 +334,8 @@ class Human(Dataset):
 
 
 class Birds(Dataset):
-    def __init__(self, path_to_dataset, res, make_trainset, from_dir, only_simple_classes=True, visible_thresh = None, align_parity = True, bb_margin = 0.125, exclude_big = True):
+    def __init__(self, path_to_dataset, res, make_trainset, from_dir, only_simple_classes=True, visible_thresh=None,
+                 align_parity=True, bb_margin=0.125, exclude_big=True):
         super(Birds, self).__init__(path_to_dataset, res, make_trainset, from_dir)
         self.classes = read_table(self.path + 'classes.txt', type_float=False)
         self.train_test = read_table(self.path + 'train_test_split.txt')
@@ -337,7 +343,8 @@ class Birds(Dataset):
         self.kp = read_table(self.path + 'parts/part_locs.txt')
         self.img_class = read_table(self.path + 'image_class_labels.txt')
         self.img_path = read_table(self.path + 'images.txt', type_float=False)
-        self.bad_categories = read_table(self.path + 'classes_difficult.txt', type_float=False)  # sb: sea bird, bb: big bird, fb: flying bird, cm: camouflage
+        self.bad_categories = read_table(self.path + 'classes_difficult.txt',
+                                         type_float=False)  # sb: sea bird, bb: big bird, fb: flying bird, cm: camouflage
         self.n_kp = 15
         self.only_simple_classes = only_simple_classes
         self.visible_thresh = visible_thresh
@@ -464,9 +471,9 @@ class Birds(Dataset):
         # padding sides: mirror edges to both sides
         img_length = max(w, h)
         image, kp, center = double_margin(image, new_margin=0.5, c=center, kp=kp, ratio=real_bb_ratio, l=img_length,
-                                        bb_h=bb_h, bb_w=bb_w)
+                                          bb_h=bb_h, bb_w=bb_w)
         image, kp, center = double_margin(image, new_margin=1., c=center, kp=kp, ratio=real_bb_ratio, l=img_length,
-                                        bb_h=bb_h, bb_w=bb_w)
+                                          bb_h=bb_h, bb_w=bb_w)
 
         if self.align_parity:
             left_eye = kp_mask[6]
@@ -490,11 +497,11 @@ class Cats(Dataset):
         super(Cats, self).__init__(path_to_dataset, res, make_trainset, from_dir)
         self.n_kp = 7  # originally 9
 
-
     def get_test_train_split(self):
         """
         Save test/train split of Zhang et. al. in two folders ('train' and 'test')
         """
+
         def path_to_list(path):
             with open(path) as file:
                 data = file.read()
@@ -504,6 +511,7 @@ class Cats(Dataset):
                 for i, image in enumerate(path_list):
                     out_list.append(image.replace('output_yixin/', ''))
             return out_list
+
         test_path = self.path + 'cat_data/testing_yixin.txt'
         train_path = self.path + 'cat_data/training_yixin.txt'
 
@@ -685,4 +693,97 @@ class CelebA(Dataset):
                 list_imgpaths.append(image_path)
                 list_keypoints.append(kp)
 
-            to_tfrecords(root_path=self.path, video_name=0, video_idx=0, list_imgpaths=list_imgpaths, list_keypoints=list_keypoints, list_masks=None)
+            to_tfrecords(root_path=self.path, video_name=0, video_idx=0, list_imgpaths=list_imgpaths,
+                         list_keypoints=list_keypoints, list_masks=None)
+
+
+class BBCPose(Dataset):
+    def __init__(self, path_to_dataset, res, make_trainset, from_dir):
+        super(BBCPose, self).__init__(path_to_dataset, res, make_trainset, from_dir)
+        self.n_kp = 7
+        # self.all_actions = ['baseball_pitch', 'clean_and_jerk', 'pull_ups', 'strumming_guitar', 'baseball_swing',
+        #                     'golf_swing', 'push_ups', 'tennis_forehand', 'bench_press', 'jumping_jacks', 'sit_ups',
+        #                     'tennis_serve', 'bowling', 'jump_rope', 'squats']
+        # self.selected_actions = selected_actions
+        self.bbox_factor = 2.
+        self.video = self.update_video(0)
+        self.train_frames = list(self.video['train_frames'][0].astype(int).astype(str))
+        self.train_joints = self.video['train_joints']
+        self.test_frames = list(self.video['test_frames'][0].astype(int).astype(str))
+        self.test_joints = self.video['test_joints']
+        self.video_key = lambda x: int(x.split('/').pop())
+        self.image_key = lambda x: int(x.split('/').pop().split('.').pop(0))
+
+    def is_testset(self, video_path):
+
+        video_name = video_path.split('/').pop()
+        video_idx = int(video_name) - 1
+        self.update_video(video_idx)
+        type = self.video['type'][0]
+        # select train/test-set
+        if type == 'test':
+            is_test = True
+        elif type == 'train' or type == 'val':
+            is_test = False
+        else:
+            raise NotImplementedError
+        source = self.video['source'][0]
+        assert source == 'buehler11', 'video belongs to extended bbc pose, not to normal bbc pose'
+
+        return is_test
+
+    def update_video(self, video_idx):
+        pose = self.path + 'bbcpose_extbbcpose_code_1.0/' + 'bbcpose.mat'
+        f = sio.loadmat(pose)
+        videos = f['bbcpose'][0]
+        video = videos[video_idx]
+        self.train_frames = list(video['train_frames'][0].astype(int).astype(str))
+        self.train_joints = video['train_joints']
+        self.test_frames = list(video['test_frames'][0].astype(int).astype(str))
+        self.test_joints = video['test_joints']
+        self.video = video
+        return self.video
+
+    def get_frame(self, frame_idx, frame_path, video_path, video_idx):
+
+        img_name = frame_path.split('/').pop().split('.').pop(0)
+
+        try:
+            if self.make_trainset:
+
+                idx = self.train_frames.index(img_name)
+                kp_x = self.train_joints[0, :, idx]
+                kp_y = self.train_joints[1, :, idx]
+            else:
+                idx = self.test_frames.index(img_name)
+                kp_x = self.test_joints[0, :, idx]  # y, x
+                kp_y = self.test_joints[1, :, idx]
+        except:
+            # print('frame {} not in list of frames with annotations'.format(frame_idx))
+            return None  #
+
+        image = cv2.imread(frame_path)
+
+        bb = [np.min(kp_x), np.max(kp_x), np.min(kp_y), np.max(kp_y)]
+        bb_w = int(bb[1] - bb[0])
+        bb_h = int(bb[3] - bb[2])
+        center = [int((bb[1] + bb[0]) / 2), int((bb[3] + bb[2]) / 2)]  # x, y
+        kp = (kp_x, kp_y)
+        max_bbox = np.max([bb_w, bb_h])
+        frame = image, kp, None, max_bbox, center
+        return frame
+
+    def process_img(self, frame):
+        image, kp, mask, max_bbox, center = frame
+        # pad
+        pad = (self.res, self.res)
+        image, kp, center = pad_img(image, pad, kp, center)
+
+        # crop around center
+        crop = (int(max_bbox * self.bbox_factor), int(max_bbox * self.bbox_factor))
+        image, kp, center = crop_img(image, crop, kp=kp, center=center)
+
+        # resize image
+        image, kp, center = resize_img(image, to_shape=self.shape, kp=kp, center=center)
+
+        return image, kp, mask, max_bbox, center

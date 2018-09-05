@@ -91,6 +91,25 @@ def read_table(txt_path, type_float=True):
         return out
 
 
+def read_kp_data(txt_path, n_kp, d):  # todo kp visible
+    """
+    read in text file with columns (img_idx, kp_idx, kp_x, kp_y, kp_visible)
+    :param txt_path: where to read data
+    :param n_kp: number of keypoints
+    :return: matrix (n_samples, n_kp, d), d=2 for images
+    """
+
+    table = read_table(txt_path)
+    assert float(int(len(table) / n_kp)) == (len(table) / n_kp), 'n_kp wrong or txt file corrupted'
+    n_samples = int(len(table) / n_kp)
+    kp = table[:, 2:5]
+    kp = np.reshape(kp, newshape=(n_samples, n_kp, d+1))  # +1 for kp_visible
+    # kp_vis = table[:, 4]
+    # kp_vis = np.reshape(kp_vis, newshape=(n_samples, n_kp))
+    # kp[:, :, 2]
+    # kp, kp_vis
+    return kp, n_samples  # x, y, visible
+
 def write_table(string_list_list, txt_path):
     with open(txt_path, 'a') as f:
         f.write("\n".join(" ".join(map(str, x)) for x in string_list_list) + '\n')
@@ -145,10 +164,13 @@ def to_tfrecords(root_path, video_name, video_idx, list_imgpaths, list_keypoints
 def kp_to_txt(root_path, n_kp, kp, kp_visible, test_or_train, i, frame_path):
     # kp to txt file:
     shape = (n_kp, 1)
+    relative_path = os.path.relpath(frame_path, root_path)
+
     if kp_visible is None:  # kp always visible if no kp mask
         kp_visible = np.ones(shape=shape)
     testtrain = ['test', 'train']
     with open(root_path + 'y_{}.txt'.format(testtrain[test_or_train]), 'a') as f:
+        img_path = np.full(shape, fill_value=relative_path)
         img_idx = np.full(shape, fill_value=i)  # todo solve +1 for starting at 1
         kp_idx = np.reshape(np.arange(n_kp), shape)  # +1 for starting at 1
         kp_out = np.transpose(np.reshape(kp, (2, n_kp)))
@@ -158,13 +180,12 @@ def kp_to_txt(root_path, n_kp, kp, kp_visible, test_or_train, i, frame_path):
         kp_idx = (kp_idx.astype(int).astype(str))
         kp_out = (np.round(kp_out.astype(float), 2).astype(str))
         kp_vis = (kp_vis.astype(int).astype(str))
+        # out = np.concatenate((img_path, img_idx, kp_idx, kp_out, kp_vis), axis=1)
         out = np.concatenate((img_idx, kp_idx, kp_out, kp_vis), axis=1)
-
         f.write("\n".join(" ".join(map(str, x)) for x in out) + '\n')
 
     # train/test split text file
     with open(root_path + '{}_img.txt'.format(testtrain[test_or_train]), 'a') as f:
-        relative_path = os.path.relpath(frame_path, root_path)
         f.write('{} {}\n'.format(i, relative_path))
 
 

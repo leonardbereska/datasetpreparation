@@ -2,7 +2,7 @@ import glob
 import cv2
 import numpy as np
 import os
-
+import timeit
 from ops_general import to_tfrecords, make_dir, kp_to_txt
 from ops_image import save_img
 
@@ -19,6 +19,8 @@ class Dataset(object):
         self.all_actions = []
         self.selected_actions = []
         self.frame_rate = frame_rate
+        self.video_key = lambda x: x
+        self.image_key = lambda x: x
 
     def is_testset(self, video_path):
         return not self.make_trainset  # always make dataset by default
@@ -49,7 +51,7 @@ class Dataset(object):
             for action in self.selected_actions:
                 assert action in self.all_actions
                 from_action_dir = from_dir + '/' + action
-                self.process_vid(from_dir=from_action_dir, to_dir=to_dir, tfname=action + '_')
+                self.process_vid(from_dir=from_action_dir, to_dir=to_dir, tfname='')  # tfname =  action + '_'
         else:
             self.process_vid(from_dir=from_dir, to_dir=to_dir, tfname='')
 
@@ -58,17 +60,16 @@ class Dataset(object):
             from_dir = self.from_dir
 
         make_dir(self.path + to_dir + '/')
-        video_paths = glob.glob(self.path + from_dir + '/*')
-
+        video_paths = sorted(glob.glob(self.path + from_dir + '/*'), key=self.video_key)
         for video_idx, video_path in enumerate(video_paths):
 
-            img_paths = sorted(glob.glob(video_path + '/*'))  # todo check if sorted necessary
+            img_paths = sorted(glob.glob(video_path + '/*'), key=self.image_key)  # todo check if sorted necessary
             save_path = video_path.replace(from_dir, to_dir)
-            # if self.all_actions:  # insert action: does not work
-            #     action = self.get_action(video_path)
-            #     split = save_path.split('/')
-            #     split[-1] = action + '_' + split[-1]
-            #     save_path = '/'.join(split)
+            if self.all_actions:  # insert action: does not work
+                action = self.get_action(video_path)
+                split = save_path.split('/')
+                split[-1] = action + '_' + split[-1]
+                save_path = '/'.join(split)
             if self.exclude_video(video_path):
                 continue
 
@@ -79,6 +80,7 @@ class Dataset(object):
             list_imgpaths = []
             list_keypoints = []
             list_masks = []
+            img_paths = img_paths[::10]
 
             for image_idx, image_path in enumerate(img_paths):
 
@@ -96,6 +98,11 @@ class Dataset(object):
 
                 # save image, make lists
                 image_path = image_path.replace(from_dir, to_dir)
+                if self.all_actions:  # insert action: does not work
+                    action = self.get_action(video_path)
+                    split = image_path.split('/')
+                    split[-2] = action + '_' + split[-2]
+                    image_path = '/'.join(split)
                 save_img(image, image_path, self.shape)
                 list_imgpaths.append(image_path)
 
