@@ -50,38 +50,5 @@ path_to_harddrive = '/Volumes/Uni/'
 
 # BBCPose
 path = path_to_harddrive + 'bbcpose/'
-bbc = BBCPose(path, res=300, make_trainset=False, from_dir='raw')
+bbc = BBCPose(path, res=300, make_trainset=False, from_dir='raw_test')
 bbc.process(to_dir='test')
-#
-# pose = path + 'bbcpose_extbbcpose_code_1.0/' + 'bbcpose.mat'
-# f = sio.loadmat(pose)
-# videos = f['bbcpose'][0]
-# video_idx = 1
-# #
-# print(len(videos))
-# for video_idx in range(20):
-#     video = videos[video_idx]
-#     name = video['videoName']
-#     type = video['type']
-#     source = video['source']
-#     train_frames = video['train_frames']
-#     train_joints = video['train_joints']
-#     test_frames = video['test_frames']
-#     test_joints = video['test_joints']
-#     print('{}, {}, {}, {}'.format(name, type, source, train_frames))
-#
-#     frame_idxs = train_frames.astype(int).astype(str)[0]
-#     img_paths = [str(path + str(video_idx) + '/' + i + '.jpg') for i in frame_idxs]
-#     i = 0
-#
-#     image = cv2.imread(img_paths[i])
-#     kp_x = train_joints[0, :, i]
-#     kp_y = train_joints[1, :, i]
-#     bb = [np.min(kp_x), np.max(kp_x), np.min(kp_y), np.max(kp_y)]
-#     bb_w = int(bb[1] - bb[0])
-#     bb_h = int(bb[3] - bb[2])
-#     center = [int((bb[1] + bb[0]) / 2), int((bb[3] + bb[2]) / 2)]  # x, y
-#     kp = (kp_x, kp_y)
-#     max_bbox = np.max([bb_w, bb_h])
-#     frame = image, kp, None, max_bbox, center
-

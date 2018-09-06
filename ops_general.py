@@ -110,6 +110,7 @@ def read_kp_data(txt_path, n_kp, d):  # todo kp visible
     # kp, kp_vis
     return kp, n_samples  # x, y, visible
 
+
 def write_table(string_list_list, txt_path):
     with open(txt_path, 'a') as f:
         f.write("\n".join(" ".join(map(str, x)) for x in string_list_list) + '\n')

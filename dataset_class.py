@@ -71,6 +71,7 @@ class Dataset(object):
                 split[-1] = action + '_' + split[-1]
                 save_path = '/'.join(split)
             if self.exclude_video(video_path):
+                print('exclude video {}'.format(video_path))
                 continue
 
             if not make_dir(save_path):
@@ -80,11 +81,12 @@ class Dataset(object):
             list_imgpaths = []
             list_keypoints = []
             list_masks = []
-            img_paths = img_paths[::10]
+            # img_paths = img_paths[::10] # todo hacky
 
             for image_idx, image_path in enumerate(img_paths):
 
                 if self.get_frame(image_idx, image_path, video_path, video_idx) is None:
+                    print('exclude frame {}'.format(image_path))
                     continue
                 frame = self.get_frame(image_idx, image_path, video_path, video_idx)
                 if self.n_kp == 0 and not self.all_actions:  # e.g. Dogs
