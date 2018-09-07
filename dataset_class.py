@@ -81,7 +81,7 @@ class Dataset(object):
             list_imgpaths = []
             list_keypoints = []
             list_masks = []
-            # img_paths = img_paths[::10] # todo hacky
+            img_paths = img_paths[::100] # todo hacky
 
             for image_idx, image_path in enumerate(img_paths):
 

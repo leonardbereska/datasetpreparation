@@ -50,5 +50,5 @@ path_to_harddrive = '/Volumes/Uni/'
 
 # BBCPose
 path = path_to_harddrive + 'bbcpose/'
-bbc = BBCPose(path, res=300, make_trainset=False, from_dir='raw_test')
-bbc.process(to_dir='test')
+bbc = BBCPose(path, res=300, make_trainset=True, from_dir='raw', exclude_test_videos=False)
+bbc.process(to_dir='train_all')

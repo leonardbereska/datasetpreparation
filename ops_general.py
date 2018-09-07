@@ -1,6 +1,8 @@
 from matplotlib import pyplot as plt
 import tensorflow as tf
 import sys
+from matplotlib import cm
+import matplotlib
 import os
 import re
 import numpy as np
@@ -42,26 +44,44 @@ def show_img(img):
     plt.show(block=False)
 
 
-def show_kp(img, kp):
+def show_kp(img, kp, kp_numbers=False):
     kp_x, kp_y = kp
     plt.imshow(img)
-    plt.scatter(kp_x, kp_y)
+    if kp_numbers:
+        for i in range(len(kp_x)):
+            plt.text(kp_x[i], kp_y[i], i, weight="bold", color='r')
+    else:
+        plt.scatter(kp_x, kp_y)
     plt.show(block=False)
 
 
-def show_kp_mask(image, kp, center, mask=None):
-    from matplotlib import pyplot as plt
-    fig = plt.figure()
-    plt.imshow(image)
-    kp_x, kp_y = kp
-    if mask:
-        kp_x *= mask
-        kp_y *= mask
-    plt.scatter(kp_x, kp_y)
-    plt.scatter(center[0], center[1], c='r')
-    # make_dir(self.path + 'matplot/')
-    # plt.savefig(self.path + 'matplot/image{}.png'.format(frame_idx), format='png')
-    plt.close(fig)
+def show_kp_regr(img, kp_gt, kp_pr, error_kp, error_mean, pck_kp, pck_mean, color_scale, verbose=1):
+    plt.imshow(img)
+    plt.axis('off')
+    x_gt, y_gt = kp_gt
+    x_regr, y_regr = kp_pr
+
+    mycm = cm.get_cmap('jet')
+    color_error = error_kp / color_scale
+    plt.scatter(x_regr, y_regr, vmin=0, vmax=max(color_error), facecolors='none', edgecolors=mycm(color_error),
+                linewidth=3, s=198, cmap=cm)
+    plt.scatter(x_gt, y_gt, c='r', marker='.', s=20)
+
+    if verbose != 0:
+        plt.title('error {}: mean {}\ncorrect {}: pck {}'.format(np.round(error_kp, 2),np.round(error_mean, 2), pck_kp, np.round(pck_mean, 2)))
+        fig = plt.gcf()
+        norm = matplotlib.colors.Normalize(vmin=0, vmax=color_scale)
+        cbaxes = fig.add_axes([0.85, 0.1, 0.03, 0.8])
+        matplotlib.colorbar.ColorbarBase(cbaxes, cmap=mycm, norm=norm, orientation='vertical')
+
+
+def show_kp_orig(img, kp_orig, size=400, width=5):
+    plt.imshow(img)
+    plt.axis('off')
+    x_orig, y_orig = kp_orig
+    cm_kp = cm.get_cmap('hsv')
+    col_kp = [i / len(x_orig) for i in list(range(0, len(x_orig)))]
+    plt.scatter(x_orig, y_orig, s=size, marker='+', facecolor=cm_kp(col_kp), linewidth=width)
 
 
 def wrap_int64(value):

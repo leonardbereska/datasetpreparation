@@ -698,7 +698,7 @@ class CelebA(Dataset):
 
 
 class BBCPose(Dataset):
-    def __init__(self, path_to_dataset, res, make_trainset, from_dir):
+    def __init__(self, path_to_dataset, res, make_trainset, from_dir, exclude_test_videos):
         super(BBCPose, self).__init__(path_to_dataset, res, make_trainset, from_dir)
         self.n_kp = 7
         # self.all_actions = ['baseball_pitch', 'clean_and_jerk', 'pull_ups', 'strumming_guitar', 'baseball_swing',
@@ -713,6 +713,8 @@ class BBCPose(Dataset):
         self.test_joints = self.video['test_joints']
         self.video_key = lambda x: int(x.split('/').pop())
         self.image_key = lambda x: int(x.split('/').pop().split('.').pop(0))
+        self.center = [541, 250]  # strong prior
+        self.exclude_test_videos = exclude_test_videos
 
     def is_testset(self, video_path):
 
@@ -729,6 +731,9 @@ class BBCPose(Dataset):
             raise NotImplementedError
         source = self.video['source'][0]
         assert source == 'buehler11', 'video belongs to extended bbc pose, not to normal bbc pose'
+
+        if not self.exclude_test_videos:
+            is_test = not self.make_trainset  # always make dataset by default
 
         return is_test
 
@@ -750,10 +755,16 @@ class BBCPose(Dataset):
 
         try:
             if self.make_trainset:
-
                 idx = self.train_frames.index(img_name)
                 kp_x = self.train_joints[0, :, idx]
                 kp_y = self.train_joints[1, :, idx]
+                if not self.exclude_test_videos:
+                    try:
+                        idx2 = self.test_frames.index(img_name)
+                        print('excluded test frame')
+                        return None  # if no error -> in testset
+                    except:
+                        pass
             else:
                 idx = self.test_frames.index(img_name)
                 kp_x = self.test_joints[0, :, idx]  # y, x
@@ -768,6 +779,22 @@ class BBCPose(Dataset):
         bb_w = int(bb[1] - bb[0])
         bb_h = int(bb[3] - bb[2])
         center = [int((bb[1] + bb[0]) / 2), int((bb[3] + bb[2]) / 2)]  # x, y
+        # if self.center is not None:
+        #     for i in [0, 1]:  # for x and y
+        #         min_center = self.center[i] - 100.
+        #         max_center = self.center[i] + 100.
+        #         if (center[i] <= min_center) or (center[i] >= max_center):
+        #             print('exclude frame {}: bbox is weird, center {}, center previous {}'.format(frame_idx, center, self.center))
+        #             return None
+        # p = 0.1
+        # self.center[0] = ((1-p) * self.center[0] + p * center[0])  # running mean
+        # self.center[1] = ((1-p) * self.center[1] + p * center[1])  # running mean
+        # <- not the problem
+        if self.make_trainset and video_idx == 4 and int(img_name) < 8800 and int(img_name) > 8000:
+            print('exclude corrupted frames')
+            return None
+
+
         kp = (kp_x, kp_y)
         max_bbox = np.max([bb_w, bb_h])
         frame = image, kp, None, max_bbox, center
@@ -780,7 +807,8 @@ class BBCPose(Dataset):
         image, kp, center = pad_img(image, pad, kp, center)
 
         # crop around center
-        crop = (int(max_bbox * self.bbox_factor), int(max_bbox * self.bbox_factor))
+        crop = (300, 300)
+        # crop = (int(max_bbox * self.bbox_factor), int(max_bbox * self.bbox_factor))
         image, kp, center = crop_img(image, crop, kp=kp, center=center)
 
         # resize image
