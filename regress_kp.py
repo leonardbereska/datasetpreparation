@@ -35,6 +35,7 @@ class Regressor(object):
             self.y_test = swap_yx(self.y_test)
         self.x_test = process_kp(np.load(path_to_files + self.testpath))
         self.x_train = process_kp(np.load(path_to_files + self.trainpath))
+        print('length y_train {}, y_test, {}, x_train {}, x_test {}'.format(len(self.y_train), len(self.y_test), len(self.x_train), len(self.x_test)))
 
         # variables
         self.X = tf.placeholder(dtype=tf.float64, shape=(b, dim_x, 2))
@@ -115,7 +116,7 @@ class Regressor(object):
             testing_pck_per_kp = 0
 
             if testset:
-                length = int(len(pred) / self.b) - 1
+                length = int(len(pred) / self.b) - 1 - 1
             else:
                 length = 100
             for i in range(length):  # go through test set in batch-size piecewise fashion, then average
